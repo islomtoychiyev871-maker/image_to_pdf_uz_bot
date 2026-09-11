@@ -1,0 +1,7 @@
+botenv/
+__pycache__/
+botenv/
+venv/
+__pycache__/
+*.pyc
+.env
