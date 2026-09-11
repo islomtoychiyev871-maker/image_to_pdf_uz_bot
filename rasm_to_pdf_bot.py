@@ -1,8 +1,8 @@
 """
 Rasmni PDF ga o'giruvchi Telegram bot
 --------------------------------------
-Foydalanuvchi botga rasm (photo yoki image fayl) yuborsa,
-bot uni PDF formatiga o'girib, orqaga qaytarib yuboradi.
+Foydalanuvchi botga rasm yuborsa, bot uni PDF formatiga o'girib qaytaradi.
+Render.com da 24/7 ishlashi uchun Flask keep-alive serveri qo'shilgan.
 """
 
 import os
@@ -12,12 +12,12 @@ import telebot
 from threading import Thread
 from flask import Flask
 
-# --- Render portini tinglash uchun Flask server ---
+# --- Render portini tinglash uchun Flask server (Keep-Alive) ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is running!"
+    return "Bot is running 24/7!"
 
 def run():
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
@@ -25,9 +25,13 @@ def run():
 def keep_alive():
     t = Thread(target=run)
     t.start()
-# --------------------------------------------------
+# -------------------------------------------------------------
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8960036284:AAGXebQ-GdMWGhj3M8wwe_DeT-X7YGF3uIA")
+# Render Environment Variables ichidan BOT_TOKEN ni oladi
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+if not BOT_TOKEN:
+    print("DIQQAT: BOT_TOKEN topilmadi! Render muhitida BOT_TOKEN sozlanganini tekshiring.")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -72,6 +76,6 @@ def handle_document(message):
 
 
 if __name__ == "__main__":
-    print("Bot ishga tushdi...")
-    keep_alive()  # <-- Render serverini ishga tushirish
+    print("Bot ishga tushmoqda...")
+    keep_alive()  # Flask serverini fon rejimida yoqish
     bot.infinity_polling()
