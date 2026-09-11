@@ -1,0 +1,68 @@
+"""
+Rasmni PDF ga o'giruvchi Telegram bot
+--------------------------------------
+Foydalanuvchi botga rasm (photo yoki image fayl) yuborsa,
+bot uni PDF formatiga o'girib, orqaga qaytarib yuboradi.
+
+O'RNATISH:@image_to_pdf_uz_bot
+    pip install pyTelegramBotAPI img2pdf
+
+ISHGA TUSHIRISH:
+    1. Telegram'da @BotFather orqali yangi bot yarating va TOKEN oling.
+    2. Quyidagi BOT_TOKEN o'rniga o'z tokeningizni qo'ying.
+    3. python rasm_to_pdf_bot.py buyrug'i bilan ishga tushiring.
+"""
+
+import os
+import io
+import img2pdf
+import telebot
+
+BOT_TOKEN = "8960036284:AAGXebQ-GdMWGhj3M8wwe_DeT-X7YGF3uIA"
+
+bot = telebot.TeleBot(BOT_TOKEN)
+
+
+@bot.message_handler(commands=["start", "help"])
+def send_welcome(message):
+    bot.reply_to(
+        message,
+        "Salom! Menga bitta rasm yuboring — men uni sizga PDF fayl "
+        "qilib qaytarib beraman. 📄"
+    )
+
+
+def convert_and_send(message, image_bytes: bytes, filename_hint: str = "rasm"):
+    try:
+        pdf_bytes = img2pdf.convert(image_bytes)
+        pdf_file = io.BytesIO(pdf_bytes)
+        pdf_file.name = f"{filename_hint}.pdf"
+        bot.send_document(message.chat.id, pdf_file, visible_file_name=pdf_file.name)
+    except Exception as e:
+        bot.reply_to(message, f"Kechirasiz, xatolik yuz berdi: {e}")
+
+
+@bot.message_handler(content_types=["photo"])
+def handle_photo(message):
+    # eng yuqori sifatdagi versiyasini olamiz (ro'yxatdagi oxirgisi)
+    file_info = bot.get_file(message.photo[-1].file_id)
+    downloaded = bot.download_file(file_info.file_path)
+    convert_and_send(message, downloaded)
+
+
+@bot.message_handler(content_types=["document"])
+def handle_document(message):
+    mime = message.document.mime_type or ""
+    if not mime.startswith("image/"):
+        bot.reply_to(message, "Iltimos, rasm fayl yuboring (jpg, png va h.k.).")
+        return
+
+    file_info = bot.get_file(message.document.file_id)
+    downloaded = bot.download_file(file_info.file_path)
+    name_hint = os.path.splitext(message.document.file_name or "rasm")[0]
+    convert_and_send(message, downloaded, name_hint)
+
+
+if __name__ == "__main__":
+    print("Bot ishga tushdi...")
+    bot.infinity_polling()
