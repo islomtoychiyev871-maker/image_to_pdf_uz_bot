@@ -3,22 +3,31 @@ Rasmni PDF ga o'giruvchi Telegram bot
 --------------------------------------
 Foydalanuvchi botga rasm (photo yoki image fayl) yuborsa,
 bot uni PDF formatiga o'girib, orqaga qaytarib yuboradi.
-
-O'RNATISH:@image_to_pdf_uz_bot
-    pip install pyTelegramBotAPI img2pdf
-
-ISHGA TUSHIRISH:
-    1. Telegram'da @BotFather orqali yangi bot yarating va TOKEN oling.
-    2. Quyidagi BOT_TOKEN o'rniga o'z tokeningizni qo'ying.
-    3. python rasm_to_pdf_bot.py buyrug'i bilan ishga tushiring.
 """
 
 import os
 import io
 import img2pdf
 import telebot
+from threading import Thread
+from flask import Flask
 
-BOT_TOKEN = "8960036284:AAGXebQ-GdMWGhj3M8wwe_DeT-X7YGF3uIA"
+# --- Render portini tinglash uchun Flask server ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run():
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+# --------------------------------------------------
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8960036284:AAGXebQ-GdMWGhj3M8wwe_DeT-X7YGF3uIA")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -44,7 +53,6 @@ def convert_and_send(message, image_bytes: bytes, filename_hint: str = "rasm"):
 
 @bot.message_handler(content_types=["photo"])
 def handle_photo(message):
-    # eng yuqori sifatdagi versiyasini olamiz (ro'yxatdagi oxirgisi)
     file_info = bot.get_file(message.photo[-1].file_id)
     downloaded = bot.download_file(file_info.file_path)
     convert_and_send(message, downloaded)
@@ -65,4 +73,5 @@ def handle_document(message):
 
 if __name__ == "__main__":
     print("Bot ishga tushdi...")
+    keep_alive()  # <-- Render serverini ishga tushirish
     bot.infinity_polling()

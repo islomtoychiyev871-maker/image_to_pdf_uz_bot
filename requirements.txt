@@ -1,5 +1,3 @@
-python-telegram-bot
-Pillow
-python-docx
-openpyxl
-fpdf2
+pyTelegramBotAPI
+img2pdf
+flask
