@@ -96,7 +96,41 @@ def reset_presentation_order(user_id):
     presentation_orders[user_id] = {"state": "idle"}
 
 
+
+def fetch_wikipedia_context(topic):
+    """Wikipedia'dan mavzu bo'yicha qisqacha ma'lumot oladi."""
+    for lang in ("uz", "en", "ru"):
+        try:
+            search_resp = requests.get(
+                f"https://{lang}.wikipedia.org/w/api.php",
+                params={"action": "query", "list": "search", "srsearch": topic, "format": "json", "srlimit": 1},
+                timeout=10,
+                headers={"User-Agent": "PresentationBot/1.0"},
+            )
+            search_resp.raise_for_status()
+            results = search_resp.json().get("query", {}).get("search", [])
+            if not results:
+                continue
+            page_title = results[0]["title"]
+            extract_resp = requests.get(
+                f"https://{lang}.wikipedia.org/w/api.php",
+                params={"action": "query", "prop": "extracts", "explaintext": 1, "exchars": 3000, "titles": page_title, "format": "json"},
+                timeout=10,
+                headers={"User-Agent": "PresentationBot/1.0"},
+            )
+            extract_resp.raise_for_status()
+            pages = extract_resp.json().get("query", {}).get("pages", {})
+            for page in pages.values():
+                extract = page.get("extract", "").strip()
+                if extract and len(extract) > 100:
+                    return extract
+        except Exception:
+            continue
+    return None
+
+
 def generate_outline_with_ai(topic, slide_count):
+    wiki_context = fetch_wikipedia_context(topic)
     """Groq AI orqali taqdimot uchun slaydlar mazmunini JSON ko'rinishida oladi."""
     system_prompt = (
         "Sen professional taqdimot (prezentatsiya) tuzuvchi yordamchisan. "
