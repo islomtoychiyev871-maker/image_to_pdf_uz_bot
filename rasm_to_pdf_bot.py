@@ -1,3 +1,4 @@
+
 import os
 import io
 import json
@@ -74,6 +75,7 @@ def get_user_texts(user_id):
     return user_texts.setdefault(user_id, [])
 
 
+
 def clear_user_texts(user_id):
     user_texts[user_id] = []
 
@@ -140,11 +142,19 @@ def generate_outline_with_ai(topic, slide_count):
         '{"title": "Taqdimot sarlavhasi", "slides": '
         '[{"title": "Slayd sarlavhasi", "bullets": ["fikr 1", "fikr 2", "fikr 3"]}]}'
     )
+
+    wiki_note = (
+        f"\n\nQo'shimcha ma'lumot (Wikipedia'dan, shundan foydalanib mazmunni "
+        f"faktlarga boyroq qiling):\n{wiki_context}"
+        if wiki_context else ""
+    )
+
     user_prompt = (
         f"Mavzu: {topic}\n"
         f"Aynan {slide_count} ta kontent slaydi bo'lsin (title slayddan tashqari). "
         "Har bir slaydda 3-5 ta qisqa va aniq fikr (bullet) bo'lsin. "
         "Javob o'zbek tilida bo'lsin."
+        f"{wiki_note}"
     )
 
     response = requests.post(
@@ -248,7 +258,7 @@ def handle_prezentatsiya_start(message):
     if not GROQ_API_KEY:
         bot.reply_to(
             message,
-            "⚠️ Hozircha bu funksiya sozlanmagan (AI kaliti yo'q). "
+            "⚠ Hozircha bu funksiya sozlanmagan (AI kaliti yo'q). "
             "Keyinroq urinib ko'ring."
         )
         return
@@ -394,7 +404,7 @@ def handle_document(message):
     # Agar foydalanuvchi rasmni "fayl" sifatida yuborsa (siqilmagan holda)
     mime = message.document.mime_type or ""
     if not mime.startswith("image/"):
-        bot.reply_to(message, "⚠️ Faqat rasm fayllarini qabul qilaman.")
+        bot.reply_to(message, "⚠ Faqat rasm fayllarini qabul qilaman.")
         return
 
     user_id = message.from_user.id
@@ -424,7 +434,7 @@ def handle_pdf(message):
     if not images:
         bot.reply_to(
             message,
-            "⚠️ Hali birorta ham rasm yubormadingiz. Avval rasm(lar) yuboring."
+            "⚠ Hali birorta ham rasm yubormadingiz. Avval rasm(lar) yuboring."
         )
         return
 
@@ -458,7 +468,7 @@ def handle_word(message):
     if not texts:
         bot.reply_to(
             message,
-            "⚠️ Hali birorta ham matn yubormadingiz. Avval matn(lar) yuboring."
+            "⚠ Hali birorta ham matn yubormadingiz. Avval matn(lar) yuboring."
         )
         return
 
@@ -496,7 +506,7 @@ def handle_excel(message):
     if not texts:
         bot.reply_to(
             message,
-            "⚠️ Hali birorta ham matn yubormadingiz. Avval matn(lar) yuboring."
+            "⚠ Hali birorta ham matn yubormadingiz. Avval matn(lar) yuboring."
         )
         return
 
@@ -553,7 +563,7 @@ def handle_plain_text(message):
         if not text.isdigit() or not (1 <= int(text) <= MAX_SLIDES):
             bot.reply_to(
                 message,
-                f"⚠️ Iltimos, 1 dan {MAX_SLIDES} tagacha bo'lgan raqam yuboring."
+                f"⚠ Iltimos, 1 dan {MAX_SLIDES} tagacha bo'lgan raqam yuboring."
             )
             return
 
@@ -564,7 +574,8 @@ def handle_plain_text(message):
             f"💳 Ajoyib! Narxi: <b>{PRESENTATION_PRICE}</b>.\n\n"
             f"Quyidagi karta raqamiga to'lovni amalga oshiring:\n"
             f"<code>{PAYMENT_CARD}</code>\n\n"
-            "To'lovni amalga oshirgach, chekning (skrinshotning) rasmini shu yerga yuboring."
+            "To'lovni ama
+lga oshirgach, chekning (skrinshotning) rasmini shu yerga yuboring."
         )
         return
 
