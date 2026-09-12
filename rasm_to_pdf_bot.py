@@ -40,7 +40,7 @@ PRESENTATION_PRICE = os.environ.get("PRESENTATION_PRICE", "10 000 so'm")
 MAX_SLIDES = 20
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -130,6 +130,8 @@ def generate_outline_with_ai(topic, slide_count):
         },
         timeout=60,
     )
+    if not response.ok:
+        logger.error("Groq API xatosi (%s): %s", response.status_code, response.text)
     response.raise_for_status()
     data = response.json()
     content = data["choices"][0]["message"]["content"]
