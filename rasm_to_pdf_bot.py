@@ -16,6 +16,9 @@ from docx import Document
 from openpyxl import Workbook
 from pptx import Presentation
 from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.enum.shapes import MSO_SHAPE
 
 # ------------------- SOZLAMALAR -------------------
 
@@ -41,6 +44,8 @@ MAX_SLIDES = 20
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "openai/gpt-oss-120b"
+
+UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -96,73 +101,261 @@ def reset_presentation_order(user_id):
     presentation_orders[user_id] = {"state": "idle"}
 
 
+def fetch_wikipedia_context(topic):
+    """Wikipedia'dan mavzu bo'yicha qisqacha ma'lumot (extract) oladi.
+    Avval o'zbekcha, topilmasa yoki juda qisqa bo'lsa inglizcha Wikipedia'ga murojaat qiladi.
+    """
+    for lang in ("uz", "en", "ru"):
+        try:
+            search_resp = requests.get(
+                f"https://{lang}.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": topic,
+                    "format": "json",
+                    "srlimit": 1,
+                },
+                timeout=10,
+                headers={"User-Agent": "PresentationBot/1.0"},
+            )
+            search_resp.raise_for_status()
+            results = search_resp.json().get("query", {}).get("search", [])
+            if not results:
+                continue
+
+            page_title = results[0]["title"]
+
+            extract_resp = requests.get(
+                f"https://{lang}.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "prop": "extracts",
+                    "explaintext": 1,
+                    "exchars": 4000,
+                    "titles": page_title,
+                    "format": "json",
+                },
+                timeout=10,
+                headers={"User-Agent": "PresentationBot/1.0"},
+            )
+            extract_resp.raise_for_status()
+            pages = extract_resp.json().get("query", {}).get("pages", {})
+            for page in pages.values():
+                extract = page.get("extract", "").strip()
+                if extract and len(extract) > 200:
+                    logger.info("Wikipedia (%s) topildi: %s", lang, page_title)
+                    return extract
+        except Exception:
+            logger.exception("Wikipedia'dan (%s) ma'lumot olishda xatolik", lang)
+            continue
+
+    return None
+
+
 def generate_outline_with_ai(topic, slide_count):
     """Groq AI orqali taqdimot uchun slaydlar mazmunini JSON ko'rinishida oladi."""
+    wiki_context = fetch_wikipedia_context(topic)
+
     system_prompt = (
-        "Sen professional taqdimot (prezentatsiya) tuzuvchi yordamchisan. "
-        "Foydalanuvchi berayotgan mavzu bo'yicha taqdimot tarkibini tuzasan. "
+        "Sen professional taqdimot (prezentatsiya) tuzuvchi ekspertsan. "
+        "Foydalanuvchi berayotgan mavzu bo'yicha CHUQUR, MA'LUMOTGA BOY va "
+        "professional taqdimot tarkibini tuzasan. Agar senga Wikipedia'dan "
+        "ma'lumot berilsa, undagi haqiqiy faktlar, raqamlar va tafsilotlardan "
+        "FOYDALAN — o'zingdan taxminiy ma'lumot to'qib chiqarma. Har bir "
+        "slaydda kamida 4-6 ta to'liq, aniq va foydali fikr (bullet) bo'lishi "
+        "shart, har bir fikr kamida 8-15 so'zdan iborat to'liq gap bo'lsin "
+        "(faqat qisqa iboralar emas). Slaydlar bir-birini takrorlamasin, har "
+        "biri mavzuning boshqa jihatini yoritsin (masalan: kirish, tarixi, "
+        "sabablari, statistika/raqamlar, ta'siri, yechimlar, misollar, xulosa "
+        "kabi turli qismlarga bo'l). Shuningdek, har bir slayd uchun shu slayd "
+        "mazmuniga mos, ingliz tilida 1-3 so'zdan iborat rasm qidiruv so'zini "
+        "(image_query) ham ber (masalan 'climate change flood').\n\n"
         "Javobni FAQAT quyidagi JSON formatda ber, boshqa hech qanday matn, "
         "izoh yoki markdown belgisi qo'shma:\n"
-        '{"title": "Taqdimot sarlavhasi", "slides": '
-        '[{"title": "Slayd sarlavhasi", "bullets": ["fikr 1", "fikr 2", "fikr 3"]}]}'
-    )
-    user_prompt = (
-        f"Mavzu: {topic}\n"
-        f"Aynan {slide_count} ta kontent slaydi bo'lsin (title slayddan tashqari). "
-        "Har bir slaydda 3-5 ta qisqa va aniq fikr (bullet) bo'lsin. "
-        "Javob o'zbek tilida bo'lsin."
+        '{"title": "Taqdimot sarlavhasi", "subtitle": "Qisqa kichik sarlavha", '
+        '"slides": [{"title": "Slayd sarlavhasi", "bullets": '
+        '["to\'liq fikr 1", "to\'liq fikr 2", "to\'liq fikr 3", "to\'liq fikr 4"], '
+        '"image_query": "english keywords"}]}'
     )
 
-    response = requests.post(
-        GROQ_API_URL,
-        headers={
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": GROQ_MODEL,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.7,
-            "response_format": {"type": "json_object"},
-        },
-        timeout=60,
-    )
-    if not response.ok:
-        logger.error("Groq API xatosi (%s): %s", response.status_code, response.text)
-    response.raise_for_status()
-    data = response.json()
-    content = data["choices"][0]["message"]["content"]
-    outline = json.loads(content)
-    return outline
+    user_prompt_parts = [
+        f"Mavzu: {topic}",
+        f"ANIQ {slide_count} ta kontent slaydi bo'lishi SHART (title slayddan tashqari, "
+        f"kamroq ham, ko'proq ham emas — aynan {slide_count} ta).",
+        "Mazmun professional, chuqur va real ma'lumotlarga asoslangan bo'lsin.",
+        "Javob o'zbek tilida bo'lsin (image_query'dan tashqari).",
+    ]
+    if wiki_context:
+        user_prompt_parts.append(
+            f"\nQuyida Wikipedia'dan olingan real ma'lumot — shundan foydalan:\n"
+            f"---\n{wiki_context}\n---"
+        )
+    user_prompt = "\n".join(user_prompt_parts)
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.6,
+        "max_tokens": 6000,
+        "response_format": {"type": "json_object"},
+    }
+    if "gpt-oss" in GROQ_MODEL:
+        payload["reasoning_effort"] = "low"
+
+    last_outline = None
+    for attempt in range(2):
+        response = requests.post(
+            GROQ_API_URL,
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=90,
+        )
+        if not response.ok:
+            logger.error("Groq API xatosi (%s): %s", response.status_code, response.text)
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        outline = json.loads(content)
+        last_outline = outline
+
+        slides = outline.get("slides", [])
+        if len(slides) >= slide_count:
+            outline["slides"] = slides[:slide_count]
+            return outline
+
+        logger.warning(
+            "AI %s ta slayd o'rniga %s ta qaytardi, qayta urinilmoqda...",
+            slide_count, len(slides)
+        )
+
+    return last_outline
+
+
+def fetch_unsplash_image(query):
+    """Unsplash'dan mavzuga mos rasm qidirib, bytes ko'rinishida qaytaradi."""
+    if not UNSPLASH_ACCESS_KEY or not query:
+        return None
+    try:
+        search_resp = requests.get(
+            "https://api.unsplash.com/search/photos",
+            params={"query": query, "per_page": 1, "orientation": "landscape"},
+            headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
+            timeout=15,
+        )
+        search_resp.raise_for_status()
+        results = search_resp.json().get("results", [])
+        if not results:
+            return None
+
+        image_url = results[0]["urls"]["regular"]
+        image_resp = requests.get(image_url, timeout=15)
+        image_resp.raise_for_status()
+        return io.BytesIO(image_resp.content)
+    except Exception:
+        logger.exception("Unsplash'dan rasm olishda xatolik (davom etamiz, rasmsiz)")
+        return None
 
 
 def build_pptx(outline):
     """Berilgan outline (dict) asosida .pptx faylini yaratadi va bytes qaytaradi."""
     prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
 
-    # Sarlavha slaydi
-    title_layout = prs.slide_layouts[0]
-    title_slide = prs.slides.add_slide(title_layout)
-    title_slide.shapes.title.text = outline.get("title", "Taqdimot")
-    if len(title_slide.placeholders) > 1:
-        title_slide.placeholders[1].text = "AI yordamida tayyorlandi"
+    ACCENT_COLOR = RGBColor(0x1F, 0x4E, 0x79)
+    TEXT_COLOR = RGBColor(0x22, 0x22, 0x22)
 
-    # Kontent slaydlari
-    content_layout = prs.slide_layouts[1]
+    blank_layout = prs.slide_layouts[6]
+
+    # --- Sarlavha slaydi ---
+    title_slide = prs.slides.add_slide(blank_layout)
+    bg = title_slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, prs.slide_height
+    )
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = ACCENT_COLOR
+    bg.line.fill.background()
+    bg.shadow.inherit = False
+
+    title_box = title_slide.shapes.add_textbox(
+        Inches(1), Inches(2.7), Inches(11.3), Inches(1.8)
+    )
+    tf = title_box.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = outline.get("title", "Taqdimot")
+    p.font.size = Pt(40)
+    p.font.bold = True
+    p.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    p.alignment = PP_ALIGN.CENTER
+
+    subtitle = outline.get("subtitle")
+    if subtitle:
+        sub_box = title_slide.shapes.add_textbox(
+            Inches(1.5), Inches(4.5), Inches(10.3), Inches(1)
+        )
+        sp = sub_box.text_frame.paragraphs[0]
+        sp.text = subtitle
+        sp.font.size = Pt(20)
+        sp.font.color.rgb = RGBColor(0xE0, 0xE0, 0xE0)
+        sp.alignment = PP_ALIGN.CENTER
+
+    # --- Kontent slaydlari ---
     for slide_data in outline.get("slides", []):
-        slide = prs.slides.add_slide(content_layout)
-        slide.shapes.title.text = slide_data.get("title", "")
+        slide = prs.slides.add_slide(blank_layout)
 
-        body = slide.placeholders[1].text_frame
+        # Sarlavha
+        title_box = slide.shapes.add_textbox(
+            Inches(0.6), Inches(0.35), Inches(12.1), Inches(0.9)
+        )
+        tp = title_box.text_frame.paragraphs[0]
+        tp.text = slide_data.get("title", "")
+        tp.font.size = Pt(28)
+        tp.font.bold = True
+        tp.font.color.rgb = ACCENT_COLOR
+
+        # Sarlavha ostidagi chiziq
+        line = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(0.6), Inches(1.15), Inches(4), Pt(3)
+        )
+        line.fill.solid()
+        line.fill.fore_color.rgb = ACCENT_COLOR
+        line.line.fill.background()
+        line.shadow.inherit = False
+
+        # Rasm (agar topilsa, o'ng tomonda)
+        image_stream = fetch_unsplash_image(slide_data.get("image_query"))
+        text_width = Inches(11.9)
+        if image_stream:
+            try:
+                slide.shapes.add_picture(
+                    image_stream, Inches(8.7), Inches(1.5), width=Inches(4.0), height=Inches(5.5)
+                )
+                text_width = Inches(7.7)
+            except Exception:
+                logger.exception("Rasmni slaydga joylashtirishda xatolik")
+
+        # Matn (bullet'lar)
+        body_box = slide.shapes.add_textbox(
+            Inches(0.6), Inches(1.5), text_width, Inches(5.6)
+        )
+        body_tf = body_box.text_frame
+        body_tf.word_wrap = True
+
         bullets = slide_data.get("bullets", [])
-        body.clear()
         for i, bullet in enumerate(bullets):
-            p = body.paragraphs[0] if i == 0 else body.add_paragraph()
-            p.text = str(bullet)
-            p.font.size = Pt(20)
+            bp = body_tf.paragraphs[0] if i == 0 else body_tf.add_paragraph()
+            bp.text = f"•  {bullet}"
+            bp.font.size = Pt(17)
+            bp.font.color.rgb = TEXT_COLOR
+            bp.space_after = Pt(12)
 
     output = io.BytesIO()
     prs.save(output)
