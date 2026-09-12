@@ -1,4 +1,6 @@
+bash
 
+cat > /home/claude/rasm_to_pdf_bot.py << 'PYEOF'
 import os
 import io
 import json
@@ -18,8 +20,6 @@ from openpyxl import Workbook
 from pptx import Presentation
 from pptx.util import Inches, Pt
 
-# ------------------- SOZLAMALAR -------------------
-
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
@@ -34,7 +34,6 @@ if not GROQ_API_KEY:
         "DIQQAT: GROQ_API_KEY topilmadi! /prezentatsiya funksiyasi ishlamaydi."
     )
 
-# --- Taqdimot funksiyasi sozlamalari ---
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "8583388989"))
 PAYMENT_CARD = os.environ.get("PAYMENT_CARD", "9860 1701 0940 9913")
 PRESENTATION_PRICE = os.environ.get("PRESENTATION_PRICE", "10 000 so'm")
@@ -48,20 +47,10 @@ logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# Har bir foydalanuvchi uchun vaqtinchalik rasmlar ro'yxati (RAM ichida saqlanadi)
-# Struktura: { user_id: [ image_bytes, image_bytes, ... ] }
 user_images = {}
-
-# Har bir foydalanuvchi uchun vaqtinchalik matn qatorlari ro'yxati
-# Struktura: { user_id: [ "matn qatori 1", "matn qatori 2", ... ] }
 user_texts = {}
-
-# Taqdimot buyurtmasi uchun holat mashinasi
-# Struktura: { user_id: {"state": "...", "topic": "...", "slides": int} }
 presentation_orders = {}
 
-
-# ------------------- YORDAMCHI FUNKSIYALAR -------------------
 
 def get_user_images(user_id):
     return user_images.setdefault(user_id, [])
@@ -75,13 +64,11 @@ def get_user_texts(user_id):
     return user_texts.setdefault(user_id, [])
 
 
-
 def clear_user_texts(user_id):
     user_texts[user_id] = []
 
 
 def convert_to_jpeg_bytes(file_bytes):
-    """Har qanday formatdagi rasmni img2pdf tushunadigan JPEG formatga o'giradi."""
     image = Image.open(io.BytesIO(file_bytes))
     if image.mode in ("RGBA", "P"):
         image = image.convert("RGB")
@@ -98,9 +85,7 @@ def reset_presentation_order(user_id):
     presentation_orders[user_id] = {"state": "idle"}
 
 
-
 def fetch_wikipedia_context(topic):
-    """Wikipedia'dan mavzu bo'yicha qisqacha ma'lumot oladi."""
     for lang in ("uz", "en", "ru"):
         try:
             search_resp = requests.get(
@@ -133,7 +118,7 @@ def fetch_wikipedia_context(topic):
 
 def generate_outline_with_ai(topic, slide_count):
     wiki_context = fetch_wikipedia_context(topic)
-    """Groq AI orqali taqdimot uchun slaydlar mazmunini JSON ko'rinishida oladi."""
+
     system_prompt = (
         "Sen professional taqdimot (prezentatsiya) tuzuvchi yordamchisan. "
         "Foydalanuvchi berayotgan mavzu bo'yicha taqdimot tarkibini tuzasan. "
@@ -143,18 +128,16 @@ def generate_outline_with_ai(topic, slide_count):
         '[{"title": "Slayd sarlavhasi", "bullets": ["fikr 1", "fikr 2", "fikr 3"]}]}'
     )
 
-    wiki_note = (
-        f"\n\nQo'shimcha ma'lumot (Wikipedia'dan, shundan foydalanib mazmunni "
-        f"faktlarga boyroq qiling):\n{wiki_context}"
-        if wiki_context else ""
-    )
+    wiki_note = ""
+    if wiki_context:
+        wiki_note = "\n\nQo'shimcha ma'lumot (Wikipedia'dan, shundan foydalanib mazmunni faktlarga boyroq qiling):\n" + wiki_context
 
     user_prompt = (
         f"Mavzu: {topic}\n"
         f"Aynan {slide_count} ta kontent slaydi bo'lsin (title slayddan tashqari). "
         "Har bir slaydda 3-5 ta qisqa va aniq fikr (bullet) bo'lsin. "
         "Javob o'zbek tilida bo'lsin."
-        f"{wiki_note}"
+        + wiki_note
     )
 
     response = requests.post(
@@ -184,17 +167,14 @@ def generate_outline_with_ai(topic, slide_count):
 
 
 def build_pptx(outline):
-    """Berilgan outline (dict) asosida .pptx faylini yaratadi va bytes qaytaradi."""
     prs = Presentation()
 
-    # Sarlavha slaydi
     title_layout = prs.slide_layouts[0]
     title_slide = prs.slides.add_slide(title_layout)
     title_slide.shapes.title.text = outline.get("title", "Taqdimot")
     if len(title_slide.placeholders) > 1:
         title_slide.placeholders[1].text = "AI yordamida tayyorlandi"
 
-    # Kontent slaydlari
     content_layout = prs.slide_layouts[1]
     for slide_data in outline.get("slides", []):
         slide = prs.slides.add_slide(content_layout)
@@ -214,27 +194,25 @@ def build_pptx(outline):
     return output
 
 
-# ------------------- BOT BUYRUQLARI -------------------
-
 @bot.message_handler(commands=["start"])
 def handle_start(message):
     clear_user_images(message.from_user.id)
     clear_user_texts(message.from_user.id)
     reset_presentation_order(message.from_user.id)
     text = (
-        "👋 Salom! Men foydali konvertatsiya botiman.\n\n"
-        "🖼 <b>Rasm → PDF</b>\n"
+        "Salom! Men foydali konvertatsiya botiman.\n\n"
+        "Rasm -> PDF\n"
         "1. Menga bir nechta rasm yuboring.\n"
-        "2. /pdf buyrug'ini bering — bitta PDF faylga birlashtirib beraman.\n\n"
-        "📝 <b>Matn → Word / Excel</b>\n"
+        "2. /pdf buyrug'ini bering - bitta PDF faylga birlashtirib beraman.\n\n"
+        "Matn -> Word / Excel\n"
         "1. Menga oddiy matn xabar(lar) yuboring.\n"
-        "2. /word — matnlarni Word (.docx) hujjatiga aylantiraman.\n"
-        "3. /excel — matnlarni Excel (.xlsx) jadvaliga aylantiraman "
+        "2. /word - matnlarni Word (.docx) hujjatiga aylantiraman.\n"
+        "3. /excel - matnlarni Excel (.xlsx) jadvaliga aylantiraman "
         "(agar qatorda vergul bo'lsa, ustunlarga bo'lib joylashtiraman).\n\n"
-        "🎓 <b>AI Taqdimot (Prezentatsiya)</b>\n"
-        f"/prezentatsiya — mavzuni yozing, men AI yordamida to'liq taqdimot "
+        "AI Taqdimot (Prezentatsiya)\n"
+        f"/prezentatsiya - mavzuni yozing, men AI yordamida to'liq taqdimot "
         f"(.pptx) tayyorlab beraman. Narxi: {PRESENTATION_PRICE}.\n\n"
-        "🗑 /clear — hammasini (rasm va matnlarni) tozalash."
+        "/clear - hammasini (rasm va matnlarni) tozalash."
     )
     bot.reply_to(message, text)
 
@@ -244,13 +222,13 @@ def handle_clear(message):
     clear_user_images(message.from_user.id)
     clear_user_texts(message.from_user.id)
     reset_presentation_order(message.from_user.id)
-    bot.reply_to(message, "🗑 Tanlangan rasmlar va matnlar tozalandi.")
+    bot.reply_to(message, "Tanlangan rasmlar va matnlar tozalandi.")
 
 
 @bot.message_handler(commands=["bekor"])
 def handle_bekor(message):
     reset_presentation_order(message.from_user.id)
-    bot.reply_to(message, "❌ Joriy jarayon bekor qilindi.")
+    bot.reply_to(message, "Joriy jarayon bekor qilindi.")
 
 
 @bot.message_handler(commands=["prezentatsiya"])
@@ -258,7 +236,7 @@ def handle_prezentatsiya_start(message):
     if not GROQ_API_KEY:
         bot.reply_to(
             message,
-            "⚠ Hozircha bu funksiya sozlanmagan (AI kaliti yo'q). "
+            "Hozircha bu funksiya sozlanmagan (AI kaliti yo'q). "
             "Keyinroq urinib ko'ring."
         )
         return
@@ -269,8 +247,8 @@ def handle_prezentatsiya_start(message):
 
     bot.reply_to(
         message,
-        "🎓 Ajoyib! Taqdimot mavzusini yozing.\n"
-        "Masalan: <i>«Iqlim o'zgarishi va uning oqibatlari»</i>"
+        "Ajoyib! Taqdimot mavzusini yozing.\n"
+        "Masalan: Iqlim o'zgarishi va uning oqibatlari"
     )
 
 
@@ -279,21 +257,19 @@ def handle_photo(message):
     user_id = message.from_user.id
     order = get_presentation_order(user_id)
 
-    # Agar foydalanuvchi to'lov skrinshotini kutayotgan bo'lsak,
-    # bu rasmni PDF uchun emas, to'lov isboti sifatida qabul qilamiz.
     if order.get("state") == "awaiting_payment_screenshot":
         handle_payment_screenshot(message, order)
         return
 
-    file_id = message.photo[-1].file_id  # eng yuqori sifatdagi versiyasi
+    file_id = message.photo[-1].file_id
     file_info = bot.get_file(file_id)
     downloaded_file = bot.download_file(file_info.file_path)
 
     try:
         jpeg_bytes = convert_to_jpeg_bytes(downloaded_file)
-    except Exception as e:
+    except Exception:
         logger.exception("Rasmni qayta ishlashda xatolik")
-        bot.reply_to(message, "❌ Bu rasmni qayta ishlab bo'lmadi, boshqa rasm yuboring.")
+        bot.reply_to(message, "Bu rasmni qayta ishlab bo'lmadi, boshqa rasm yuboring.")
         return
 
     images = get_user_images(user_id)
@@ -301,7 +277,7 @@ def handle_photo(message):
 
     bot.reply_to(
         message,
-        f"✅ Rasm qabul qilindi ({len(images)}-ta). Yana rasm yuboring yoki /pdf deb yozing."
+        f"Rasm qabul qilindi ({len(images)}-ta). Yana rasm yuboring yoki /pdf deb yozing."
     )
 
 
@@ -311,7 +287,7 @@ def handle_payment_screenshot(message, order):
 
     bot.reply_to(
         message,
-        "✅ To'lov skrinshoti qabul qilindi! Admin tasdiqlashini kuting "
+        "To'lov skrinshoti qabul qilindi! Admin tasdiqlashini kuting "
         "(odatda tez orada). Tasdiqlangach, taqdimotingiz avtomatik yuboriladi."
     )
 
@@ -319,17 +295,17 @@ def handle_payment_screenshot(message, order):
     user_label = f"@{username}" if username else f"ID: {user_id}"
 
     caption = (
-        f"💳 <b>Yangi to'lov so'rovi</b>\n\n"
-        f"👤 Foydalanuvchi: {user_label} (id: {user_id})\n"
-        f"📚 Mavzu: {order.get('topic')}\n"
-        f"📊 Slaydlar soni: {order.get('slides')}\n\n"
+        f"Yangi to'lov so'rovi\n\n"
+        f"Foydalanuvchi: {user_label} (id: {user_id})\n"
+        f"Mavzu: {order.get('topic')}\n"
+        f"Slaydlar soni: {order.get('slides')}\n\n"
         f"To'lovni tekshirib, tasdiqlang yoki rad eting:"
     )
 
     markup = types.InlineKeyboardMarkup()
     markup.add(
-        types.InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"approve_{user_id}"),
-        types.InlineKeyboardButton("❌ Rad etish", callback_data=f"reject_{user_id}"),
+        types.InlineKeyboardButton("Tasdiqlash", callback_data=f"approve_{user_id}"),
+        types.InlineKeyboardButton("Rad etish", callback_data=f"reject_{user_id}"),
     )
 
     bot.send_photo(
@@ -353,7 +329,7 @@ def handle_admin_decision(call):
     if action == "approve":
         bot.answer_callback_query(call.id, "Tasdiqlandi, taqdimot tayyorlanmoqda...")
         bot.edit_message_caption(
-            caption=call.message.caption + "\n\n✅ TASDIQLANDI",
+            caption=call.message.caption + "\n\nTASDIQLANDI",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
         )
@@ -361,20 +337,20 @@ def handle_admin_decision(call):
     else:
         bot.answer_callback_query(call.id, "Rad etildi.")
         bot.edit_message_caption(
-            caption=call.message.caption + "\n\n❌ RAD ETILDI",
+            caption=call.message.caption + "\n\nRAD ETILDI",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
         )
         bot.send_message(
             user_id,
-            "❌ To'lovingiz tasdiqlanmadi. Iltimos, to'lovni tekshirib, "
+            "To'lovingiz tasdiqlanmadi. Iltimos, to'lovni tekshirib, "
             "qaytadan /prezentatsiya buyrug'ini yuboring."
         )
         reset_presentation_order(user_id)
 
 
 def generate_and_send_presentation(user_id, order):
-    wait_msg = bot.send_message(user_id, "⏳ AI taqdimotingizni tayyorlamoqda, biroz kuting...")
+    wait_msg = bot.send_message(user_id, "AI taqdimotingizni tayyorlamoqda, biroz kuting...")
 
     try:
         outline = generate_outline_with_ai(order.get("topic") or order.get("query", "Taqdimot"), order["slides"])
@@ -383,7 +359,7 @@ def generate_and_send_presentation(user_id, order):
     except Exception:
         logger.exception("Taqdimot yaratishda xatolik")
         bot.edit_message_text(
-            "❌ Taqdimot yaratishda xatolik yuz berdi. Admin bilan bog'laning.",
+            "Taqdimot yaratishda xatolik yuz berdi. Admin bilan bog'laning.",
             chat_id=user_id,
             message_id=wait_msg.message_id,
         )
@@ -393,7 +369,7 @@ def generate_and_send_presentation(user_id, order):
     bot.send_document(
         user_id,
         pptx_file,
-        caption="✅ Taqdimotingiz tayyor! Omad tilaymiz 🎓"
+        caption="Taqdimotingiz tayyor! Omad tilaymiz"
     )
     bot.delete_message(user_id, wait_msg.message_id)
     reset_presentation_order(user_id)
@@ -401,10 +377,9 @@ def generate_and_send_presentation(user_id, order):
 
 @bot.message_handler(content_types=["document"])
 def handle_document(message):
-    # Agar foydalanuvchi rasmni "fayl" sifatida yuborsa (siqilmagan holda)
     mime = message.document.mime_type or ""
     if not mime.startswith("image/"):
-        bot.reply_to(message, "⚠ Faqat rasm fayllarini qabul qilaman.")
+        bot.reply_to(message, "Faqat rasm fayllarini qabul qilaman.")
         return
 
     user_id = message.from_user.id
@@ -415,14 +390,14 @@ def handle_document(message):
         jpeg_bytes = convert_to_jpeg_bytes(downloaded_file)
     except Exception:
         logger.exception("Hujjat-rasmni qayta ishlashda xatolik")
-        bot.reply_to(message, "❌ Bu faylni qayta ishlab bo'lmadi.")
+        bot.reply_to(message, "Bu faylni qayta ishlab bo'lmadi.")
         return
 
     images = get_user_images(user_id)
     images.append(jpeg_bytes)
     bot.reply_to(
         message,
-        f"✅ Rasm qabul qilindi ({len(images)}-ta). Yana rasm yuboring yoki /pdf deb yozing."
+        f"Rasm qabul qilindi ({len(images)}-ta). Yana rasm yuboring yoki /pdf deb yozing."
     )
 
 
@@ -434,18 +409,18 @@ def handle_pdf(message):
     if not images:
         bot.reply_to(
             message,
-            "⚠ Hali birorta ham rasm yubormadingiz. Avval rasm(lar) yuboring."
+            "Hali birorta ham rasm yubormadingiz. Avval rasm(lar) yuboring."
         )
         return
 
-    wait_msg = bot.reply_to(message, "⏳ PDF tayyorlanmoqda...")
+    wait_msg = bot.reply_to(message, "PDF tayyorlanmoqda...")
 
     try:
         pdf_bytes = img2pdf.convert(images)
     except Exception:
         logger.exception("PDF yaratishda xatolik")
         bot.edit_message_text(
-            "❌ PDF yaratishda xatolik yuz berdi. Qaytadan urinib ko'ring.",
+            "PDF yaratishda xatolik yuz berdi. Qaytadan urinib ko'ring.",
             chat_id=message.chat.id,
             message_id=wait_msg.message_id,
         )
@@ -454,7 +429,7 @@ def handle_pdf(message):
     pdf_file = io.BytesIO(pdf_bytes)
     pdf_file.name = "natija.pdf"
 
-    bot.send_document(message.chat.id, pdf_file, caption="✅ Mana sizning PDF faylingiz!")
+    bot.send_document(message.chat.id, pdf_file, caption="Mana sizning PDF faylingiz!")
     bot.delete_message(message.chat.id, wait_msg.message_id)
 
     clear_user_images(user_id)
@@ -468,11 +443,11 @@ def handle_word(message):
     if not texts:
         bot.reply_to(
             message,
-            "⚠ Hali birorta ham matn yubormadingiz. Avval matn(lar) yuboring."
+            "Hali birorta ham matn yubormadingiz. Avval matn(lar) yuboring."
         )
         return
 
-    wait_msg = bot.reply_to(message, "⏳ Word hujjati tayyorlanmoqda...")
+    wait_msg = bot.reply_to(message, "Word hujjati tayyorlanmoqda...")
 
     try:
         doc = Document()
@@ -486,13 +461,13 @@ def handle_word(message):
     except Exception:
         logger.exception("Word yaratishda xatolik")
         bot.edit_message_text(
-            "❌ Word hujjatini yaratishda xatolik yuz berdi.",
+            "Word hujjatini yaratishda xatolik yuz berdi.",
             chat_id=message.chat.id,
             message_id=wait_msg.message_id,
         )
         return
 
-    bot.send_document(message.chat.id, output, caption="✅ Mana sizning Word hujjatingiz!")
+    bot.send_document(message.chat.id, output, caption="Mana sizning Word hujjatingiz!")
     bot.delete_message(message.chat.id, wait_msg.message_id)
 
     clear_user_texts(user_id)
@@ -506,11 +481,11 @@ def handle_excel(message):
     if not texts:
         bot.reply_to(
             message,
-            "⚠ Hali birorta ham matn yubormadingiz. Avval matn(lar) yuboring."
+            "Hali birorta ham matn yubormadingiz. Avval matn(lar) yuboring."
         )
         return
 
-    wait_msg = bot.reply_to(message, "⏳ Excel jadvali tayyorlanmoqda...")
+    wait_msg = bot.reply_to(message, "Excel jadvali tayyorlanmoqda...")
 
     try:
         wb = Workbook()
@@ -518,7 +493,6 @@ def handle_excel(message):
         ws.title = "Malumotlar"
 
         for line in texts:
-            # Agar qatorda vergul bo'lsa, ustunlarga bo'lib joylashtiramiz
             cells = [cell.strip() for cell in line.split(",")]
             ws.append(cells)
 
@@ -529,13 +503,13 @@ def handle_excel(message):
     except Exception:
         logger.exception("Excel yaratishda xatolik")
         bot.edit_message_text(
-            "❌ Excel jadvalini yaratishda xatolik yuz berdi.",
+            "Excel jadvalini yaratishda xatolik yuz berdi.",
             chat_id=message.chat.id,
             message_id=wait_msg.message_id,
         )
         return
 
-    bot.send_document(message.chat.id, output, caption="✅ Mana sizning Excel jadvalingiz!")
+    bot.send_document(message.chat.id, output, caption="Mana sizning Excel jadvalingiz!")
     bot.delete_message(message.chat.id, wait_msg.message_id)
 
     clear_user_texts(user_id)
@@ -547,23 +521,21 @@ def handle_plain_text(message):
     order = get_presentation_order(user_id)
     state = order.get("state")
 
-    # --- Taqdimot oqimi: mavzuni kutmoqda ---
     if state == "awaiting_topic":
         order["topic"] = message.text.strip()
         order["state"] = "awaiting_slide_count"
         bot.reply_to(
             message,
-            f"📊 Nechta slayd bo'lsin? (1 dan {MAX_SLIDES} tagacha raqam yozing)"
+            f"Nechta slayd bo'lsin? (1 dan {MAX_SLIDES} tagacha raqam yozing)"
         )
         return
 
-    # --- Taqdimot oqimi: slaydlar sonini kutmoqda ---
     if state == "awaiting_slide_count":
         text = message.text.strip()
         if not text.isdigit() or not (1 <= int(text) <= MAX_SLIDES):
             bot.reply_to(
                 message,
-                f"⚠ Iltimos, 1 dan {MAX_SLIDES} tagacha bo'lgan raqam yuboring."
+                f"Iltimos, 1 dan {MAX_SLIDES} tagacha bo'lgan raqam yuboring."
             )
             return
 
@@ -571,45 +543,37 @@ def handle_plain_text(message):
         order["state"] = "awaiting_payment_screenshot"
         bot.reply_to(
             message,
-            f"💳 Ajoyib! Narxi: <b>{PRESENTATION_PRICE}</b>.\n\n"
+            f"Ajoyib! Narxi: {PRESENTATION_PRICE}.\n\n"
             f"Quyidagi karta raqamiga to'lovni amalga oshiring:\n"
-            f"<code>{PAYMENT_CARD}</code>\n\n"
-            "To'lovni ama
-lga oshirgach, chekning (skrinshotning) rasmini shu yerga yuboring."
+            f"{PAYMENT_CARD}\n\n"
+            "To'lovni amalga oshirgach, chekning skrinshotini shu yerga yuboring."
         )
         return
 
-    # --- Taqdimot oqimi: to'lov skrinshotini kutmoqda, lekin matn yuborilgan ---
     if state == "awaiting_payment_screenshot":
-        bot.reply_to(message, "📸 Iltimos, matn emas, to'lov chekining RASMINI yuboring.")
+        bot.reply_to(message, "Iltimos, matn emas, to'lov chekining rasmini yuboring.")
         return
 
     if state == "awaiting_approval":
-        bot.reply_to(message, "⏳ To'lovingiz hali admin tomonidan tekshirilmoqda, biroz kuting.")
+        bot.reply_to(message, "To'lovingiz hali admin tomonidan tekshirilmoqda, biroz kuting.")
         return
 
-    # --- Aks holda, oddiy matn: Word/Excel uchun saqlaymiz ---
     texts = get_user_texts(user_id)
     texts.append(message.text)
 
     bot.reply_to(
         message,
-        f"📝 Matn qabul qilindi ({len(texts)}-qator).\n"
+        f"Matn qabul qilindi ({len(texts)}-qator).\n"
         "Yana matn yuboring, yoki /word (Word) / /excel (Excel) deb yozing."
     )
 
-
-# ------------------- FLASK KEEP-ALIVE SERVER -------------------
-# Render Web Service turi doim ochiq portni kutadi, shuning uchun
-# Flask serverni alohida oqim (thread)da ishga tushiramiz,
-# botning polling jarayoni esa asosiy oqimda ishlaydi.
 
 app = Flask(__name__)
 
 
 @app.route("/")
 def index():
-    return "Bot ishlayapti ✅"
+    return "Bot ishlayapti"
 
 
 def run_flask():
@@ -617,10 +581,7 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 
-# ------------------- ISHGA TUSHIRISH -------------------
-
 def clear_telegram_queue():
-    """Eski webhook/navbatni tozalab, 409 (Conflict) xatosining oldini oladi."""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
         requests.get(url, params={"drop_pending_updates": "true"}, timeout=10)
@@ -647,3 +608,11 @@ if __name__ == "__main__":
                 "5 soniyadan keyin qayta urinamiz..."
             )
             time.sleep(5)
+PYEOF
+python3 -c "import ast; ast.parse(open('/home/claude/rasm_to_pdf_bot.py').read())" && echo SYNTAX_OK
+base64 -w0 /home/claude/rasm_to_pdf_bot.py > /home/claude/bot_b64.txt
+wc -c /home/claude/bot_b64.txt
+Ausgabe
+
+SYNTAX_OK
+25216 /home/claude/bot_b64.txt
