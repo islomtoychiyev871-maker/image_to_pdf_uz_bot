@@ -539,7 +539,7 @@ def handle_plain_text(message):
 
     # --- Taqdimot oqimi: mavzuni kutmoqda ---
     if state == "awaiting_topic":
-        order.get("topic") or order.get("query", "Taqdimot") = message.text.strip()
+        order["topic"] = message.text.strip()
         order["state"] = "awaiting_slide_count"
         bot.reply_to(
             message,
