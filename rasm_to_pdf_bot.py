@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import time
 import threading
 import logging
 
@@ -571,9 +572,31 @@ def run_flask():
 
 # ------------------- ISHGA TUSHIRISH -------------------
 
+def clear_telegram_queue():
+    """Eski webhook/navbatni tozalab, 409 (Conflict) xatosining oldini oladi."""
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
+        requests.get(url, params={"drop_pending_updates": "true"}, timeout=10)
+        logger.info("Telegram navbati tozalandi.")
+    except Exception:
+        logger.exception("Telegram navbatini tozalashda xatolik (muhim emas, davom etamiz)")
+
+
 if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
+    clear_telegram_queue()
+    time.sleep(2)
+
     logger.info("Bot polling boshlandi...")
-    bot.infinity_polling(skip_pending=True)
+
+    while True:
+        try:
+            bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
+        except Exception:
+            logger.exception(
+                "Polling to'xtadi (ehtimol vaqtinchalik Conflict xatosi). "
+                "5 soniyadan keyin qayta urinamiz..."
+            )
+            time.sleep(5)
