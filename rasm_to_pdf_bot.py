@@ -367,7 +367,7 @@ def generate_and_send_presentation(user_id, order):
     wait_msg = bot.send_message(user_id, "⏳ AI taqdimotingizni tayyorlamoqda, biroz kuting...")
 
     try:
-        outline = generate_outline_with_ai(order["topic"], order["slides"])
+        outline = generate_outline_with_ai(order.get("topic") or order.get("query", "Taqdimot"), order["slides"])
         pptx_file = build_pptx(outline)
         pptx_file.name = "taqdimot.pptx"
     except Exception:
@@ -539,7 +539,7 @@ def handle_plain_text(message):
 
     # --- Taqdimot oqimi: mavzuni kutmoqda ---
     if state == "awaiting_topic":
-        order["topic"] = message.text.strip()
+        order.get("topic") or order.get("query", "Taqdimot") = message.text.strip()
         order["state"] = "awaiting_slide_count"
         bot.reply_to(
             message,
